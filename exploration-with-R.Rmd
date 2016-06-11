@@ -1,0 +1,528 @@
+---
+title: "Data Analysis for Financial Contributions to Presidential Campaigns for State of TN"
+author: "Long Wan"
+date: "June 7, 2016"
+output: html_document
+---
+# Abstract
+The dataset chosen is the Financial Contributions to Presidential Campaigns for State of Tenneessee in 2012 since I am living in Tenneesse. I wish to find something interesting regarding presidential election donations. What kind of people were donating money to which party? How much did they donate? Which party had more advantanges over others in TN? How did people donate money to their supporting party over time? I tried to answer them by exploring the dataset.
+
+# Basic information and cleaning data
+Firstly read the dataset and have a glance at its structure.
+```{r,echo = FALSE}
+setwd("C:/data analyst/pj4/project")       #set work directory
+p <- read.table("P00000001-TN.csv",header = TRUE, sep = ",", row.names = NULL)     #read csv file
+colnames(p) <- c(colnames(p)[-1],'x')
+p$x <- NULL  
+str(p)
+```
+The dataset has 18 variables. I notice that "cmte_id", "cand_id", "file_num", and "tran_id" seem to have nothing to do with the following analysis.I checked their meaning by looking into the dictionary. 
+"cmte_id" is a 9-character alpha-numeric code assigned to a committee by the Federal Election Commission. It is not important.
+"cand_id" is a 9-character alpha-numeric code assigned to a candidate by the Federal Election Commission. We have already had candidate name, so the ids are not essential.
+"file_num" is a unique number assigned to a report and all its associated transactions.This file number can be used to link transactions to the report summaries. Since we do not need to link to the report summaries, we can leave them out temperarily.
+"tran_id" is a unique identifier permanently associated with each itemization or transaction appearing in an FEC electronic file. It is not important. 
+Also, variable "contbr_st" is meaningless, since this table is for state of TN only. So I deleted these variables to simplify the dataset. 
+```{r,echo = FALSE}
+# delete 6 variables that I don't care.
+del_name_list = c("cmte_id","cand_id", "contbr_st","file_num","tran_id","form_tp")
+p <- p[!names(p)%in%del_name_list]
+
+```
+Next, I am gonna change data types. The absolute value of contbr_zip has no mathematical meaning, so I change it from int to factor. Contb_receipt_dt should be switched to date format. Besides, zip codes do not have united formates. Some are 5 digit number while some are 9 digit number. I extract the first 5 digit from those of 9 digit. 
+```{r,echo = FALSE}
+p$contbr_zip <- as.factor(p$contbr_zip)    #switch zip from int to factor
+p$contb_receipt_dt <- as.Date(p$contb_receipt_dt, format = "%d-%b-%y")     #switch date from factor to Date format
+p$contbr_zip <- substr(p$contbr_zip,1,5)      #extract the first 5 digit number as zip codes.
+
+```
+Then I would like to add a colunmn called cand_party, representing each candidate's party. 
+```{r,echo = FALSE}
+levels(p$cand_nm)
+```
+See that there were 14 presidential candidates who received donations from TN. I would create lists to group them by party.
+```{r,echo = FALSE}
+#create lists to group them
+Republican <- c("Bachmann, Michele","Cain, Herman","Gingrich, Newt" ,"Huntsman, Jon","McCotter, Thaddeus G","Paul, Ron","Pawlenty, Timothy","Perry, Rick","Roemer, Charles E. 'Buddy' III","Romney, Mitt","Santorum, Rick")
+Libertarian <- c("Johnson, Gary Earl")
+Democratic <- c("Obama, Barack")
+Green <- c("Stein, Jill")
+#create the new variable
+p$cand_party <- ifelse(p$cand_nm%in%Republican,"Republican", ifelse(p$cand_nm%in%Libertarian,"Libertarian", ifelse(p$cand_nm%in%Democratic,"Democratic", "Green")))
+p$cand_party <- as.factor(p$cand_party)
+```
+Now I got a datawet with 13 varialbes and 81338 observations. Summary the dataset.
+```{r,echo = FALSE}
+summary(p)
+```
+See that there are several NAs in contbr_occupation and contbr_employer. That does not matter because NA number is small. I also notice that some contribution amounts are negative, and that is because of refund displayed from receipt_desc. There is something strange that some election_tp are concerning to 2008. Look at their memo texts to see if there are any explanations.
+
+```{r,echo = FALSE}
+p[(p$election_tp == "G2008" | p$election_tp == "P2008"),]$receipt_desc
+
+```
+
+There are all refunds regarding donation of year 2008.  Next I am gonna add a new variable called ele_tp to represent its election type(primary, general or others) by extracting the first alphabet. 
+
+```{r, echo = FALSE}
+p$ele_tp <- substr(p$election_tp,1,1)
+p$ele_tp <- as.factor(p$ele_tp)
+```
+
+Fanlly I get a 14-variable dataset. Look at the head of it.
+```{r, echo = FALSE}
+head(p)
+```
+
+
+
+# Analysis
+
+After cleaning and updating the data, I have got some ideas about the data structure and how I would explore it. I will try to get some meaningful features about donations from TN. First I would like to see the donation amount distribution.
+
+```{r,warning = FALSE,message = FALSE,echo = FALSE}
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(ggrepel)
+```
+## Donation amount distribution
+```{r,warning = FALSE,echo = FALSE}
+ggplot(aes(x = contb_receipt_amt), data = p)+
+  geom_histogram(binwidth = 10,col = "black", fill = "#6495ED")+
+  scale_x_continuous(lim = c(0,1000),breaks = seq(0,1000,50))+
+  ggtitle("number of donations at each amount interval")
+```
+
+As we can see from the graph above, most donation amount are under 100 dollars. What's more, contributors tended to donate some centain amount of like 100, 150, 200, 250, 300 and 500 dollars, compared to neighboring amount. 
+I should mention that the amount ranged from -5000 to 10000 dollars, however, the number of them is too small so I limit the range displayed between 0 and 1000. 
+This graph seems skew. I decide to use log10 x-axis to make it look more balanced.
+```{r, warining = FALSE,echo = FALSE}
+ggplot(aes(x = contb_receipt_amt),data = subset(p,p$contb_receipt_amt > 0))+
+  geom_histogram(col = "black", fill = "#6495ED",binwidth = 0.05)+
+  scale_x_log10(breaks = c(5,10,50,100,200,500,1000,5000,10000))+
+  ggtitle("number of donations at each mount log10 interval")
+
+```
+
+Knowing the amount distribution, I am trying to know where did these donations flow into. In other words, how much did each candidate receive.
+## Donation and candidates
+I should group them by candidate name firstly and sum the amount of money.
+
+```{r,warning = FALSE,echo = FALSE}
+#group data by cand_nm
+p_by_candnm <- p %>%
+  group_by(cand_nm) %>%
+  summarize(sum_amt = sum(contb_receipt_amt),
+            cand_party = cand_party[1],
+            n = n()) %>%
+  arrange(desc(sum_amt))
+p_by_candnm
+#create candidate number
+p_by_candnm$cand_id = 1:14
+ggplot(aes(x = cand_id, y = sum_amt,fill = cand_party), data = p_by_candnm)+
+  geom_bar(stat = "identity")+
+  scale_x_continuous(breaks = seq(1,14,1))+
+  ggtitle("Donations each candidate received")
+```
+
+In this graph, each number corresponds to a candidate name in the table showed above. Romney received the greatest amount donations from the public while Obama took the second place. The two candidates were far ahead of others. 
+Then I want to know something about average donation per donator for each candidate. 
+
+```{r,warning = FALSE,echo = FALSE}
+ggplot(aes(x = cand_id, y = sum_amt/n,fill = cand_party), data = p_by_candnm)+
+  geom_bar(stat = "identity")+
+  scale_x_continuous(breaks = seq(1,14,1))+
+  ggtitle("Average donation per donator for each candidate")
+```
+
+See that Obama's average donation is much lower than other Republicans and it reflects that Obama gained massive support from the poor. What's more, Republican received far more total fund than Democratic, partly because they were supported by richer people. However, there might be other reasons that caused this phenomenon so I decide to study it further.
+
+##Donation and party
+Firstly show the total donation amount distribution of different parties. It would be better to draw a boxplot.
+
+Summary of Republican donation
+```{r,echo = FALSE}
+summary(subset(p, p$cand_party == "Republican")$contb_receipt_amt)
+```
+
+Summary of Democratic donation
+```{r, echo = FALSE}
+summary(subset(p, p$cand_party == "Democratic")$contb_receipt_amt)
+```
+
+Summary of Green donation
+```{r,echo = FALSE}
+summary(subset(p, p$cand_party == "Green")$contb_receipt_amt)
+```
+
+Summary of Libertarian donation
+```{r, echo = FALSE}
+summary(subset(p, p$cand_party == "Libertarian")$contb_receipt_amt)
+```
+
+```{r, warning = FALSE,echo = FALSE}
+qplot(x = cand_party, y = contb_receipt_amt, data = p, geom = "boxplot")+
+  coord_cartesian(ylim = c(-500,1000))+
+  ggtitle("Donation amount distribution")
+```
+
+As showed on the graph above, Green and Libertarian seemed to have supporters of highest quality. However, their sample sizes are too limited. Republican obviously had supporter of much higher quality than Democratic had. The 75 percentile of Democratic is just the same as the 50 percentile of Republican.
+Next I want to explore how much did each party gain in primary and general election, respectively.
+
+```{r,echo = FALSE}
+#plot donation number vs party by election type
+p_tem <- p[(p$ele_tp != ""),]
+ggplot(aes(x = cand_party,fill=ele_tp),
+       data = p_tem[p_tem$cand_party == "Democratic" | p_tem$cand_party == "Republican",])+
+  geom_bar(stat = "count")+
+  ggtitle("Donation number vs party by election type")
+
+#group data by election type and party, then sum the amount of money.
+p_by_eletp <- subset(p[p$cand_party == "Democratic" | p$cand_party == "Republican",]) %>%
+  group_by(ele_tp, cand_party) %>%
+  summarize(sum_amt = sum(contb_receipt_amt))
+p_by_eletp <- p_by_eletp[-1,]
+
+#plot donation amount vs party by election type
+ggplot(aes(x = cand_party, y = sum_amt,fill = ele_tp), data = p_by_eletp)+
+  geom_bar(stat = "identity")+
+  ggtitle("Donation amount vs party by election type")
+```
+
+From the two graphs, I learn that Republican supporters were more active in general election than in primary election compared to Democaric supporters, since Republican donations grew faster than Democratic donations not only in donation number but also in donation amount throughout two periods. It was probably because of Romney's pessimistic election prospect, encouraging more supporters to come forward. 
+
+So next I move forward to see the time series. How did the donation number and amount change throughout the time?
+
+```{r,warning = FALSE,message = FALSE,echo = FALSE}
+#plot donation number vs date
+ggplot(aes(x = contb_receipt_dt), data = p)+
+  xlim(as.Date("2011-01-01"),as.Date("2012-11-06"))+
+  geom_freqpoly(aes(color = cand_party))+
+  ggtitle("Donate number vs date")
+
+#mark the data by half-month.The original date is 2011-01-01
+p$half_month <- floor((p$contb_receipt_dt-as.Date("2011-01-01"))/14)
+
+#group data by half-month and get the sum of donation amount for each half-month
+p_by_date <- p %>%
+  group_by(half_month, cand_party) %>%
+  summarize(sum_amt = sum(contb_receipt_amt))
+p_by_date <- p_by_date[-1,]
+
+#plot donation amount throughout time
+ggplot(aes(x = half_month,
+           y = sum_amt), data = p_by_date)+
+  geom_line(aes(color = cand_party),stat = "identity")+
+  xlim(0,49)+
+  ggtitle("Donate amount vs half-month")+
+  geom_vline(xintercept = c(48.21,43.21,33))
+```
+
+The first graph is regrading donation number and the second one is regarding donation amount. To make plot smoothier, in the second graph, I set the X-aixs as half_month(two weeks) and aggregate the amount of donation within the 2 weeks as y-axis. 
+
+From the first graph, we get to know that with the time being approaching to the ballot day, donation number increased sharply and party supporters became more active. In the second graph, the first vertical solid line from the left side represents the day when Romney became the only one competitve candidate inside Republican, and the second vertical line represents the day when Romney was formally nominated by Republican, and the third line represents the elective day. As we can see, Republican had greater advantages on donation amount over Democratic at almost every time period. Republican candidates had more stable donation resource. 
+
+Next I would like to learn the time when richer persons donated money. I only consider those who donated 500 or more dollars. 
+
+```{r,echo = FALSE}
+p_rich <- subset(p, p$contb_receipt_amt >= 1000)
+p_rich <- subset(p_rich,p_rich$cand_party == "Democratic" | p_rich$cand_party == "Republican")
+
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, col = ele_tp), data = p_rich)+
+  geom_point(aes(alpha = 0.05))+
+  facet_wrap(~ cand_party, ncol = 1)+
+  ggtitle("Richer persons donations over time")
+```
+
+As we learned from the graph, richer persons tend to come forward later. A lot of 5000 dollars donation to Republican candidate appeared and 2500 dollars point became denser after July 2012.
+
+In the following part, even though I will be analyzing data grouped by party, I will pay more attention to features of donators. Where did supportes of each party live in? What were their occupation? 
+
+## Donation and donators
+
+I would like to see the regional distribution of Republican and Democratic supporters by looking into the donators number and amount of donation in major cities here in TN. I define major cities by extracting a city list of 30 cities with greatest number of donators.
+
+
+```{r,echo = FALSE}
+# group dataset by city and extract the major city list
+p_by_city_n <- p %>%
+  group_by(contbr_city) %>%
+  summarize(n = n(),
+            sum_amt = sum(contb_receipt_amt)) %>%
+  arrange(desc(n))
+major_city = p_by_city_n$contbr_city[1:30]
+head(p_by_city_n,30)
+
+# group dataset by city and party, and then reshape it. The value I care about is the count number
+p_by_city <- p %>%
+  group_by(contbr_city,cand_party) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n))
+p_wide_n <- dcast(p_by_city,
+                contbr_city ~ cand_party,
+                value.var = 'n')
+major_party <- c("Republican","Democratic")
+p_wide_n <- p_wide_n[p_wide_n$contbr_city%in%major_city,c(1,2,5)]
+head(p_wide_n,30)
+
+ggplot(aes(x = Democratic, y = Republican), data = p_wide_n)+
+  geom_point()+
+  ylim(0,10000)+
+  geom_abline(intercept = 0,slope = 1)+
+  geom_text_repel(aes(label = contbr_city),size = 2.5)+
+  ggtitle("Republican VS Democratic: Number")
+
+# group dataset by city and party, and then reshape it. The value I care about is the donation amount
+p_by_city_amt <- p %>%
+  group_by(contbr_city,cand_party) %>%
+  summarize(sum_amt = sum(contb_receipt_amt)) %>%
+  arrange(desc(sum_amt))
+p_wide_amt <- dcast(p_by_city_amt,
+                contbr_city ~ cand_party,
+                value.var = 'sum_amt')
+p_wide_amt <- p_wide_amt[p_wide_amt$contbr_city%in%major_city,c(1,2,5)]
+head(p_wide_amt,30)
+
+ggplot(aes(x = Democratic, y = Republican), data = p_wide_amt)+
+  geom_point()+
+  geom_abline(intercept = 0,slope = 1)+
+  geom_text_repel(aes(label = contbr_city),size = 2.5)+
+  ggtitle("Republican VS Democratic: Amount")
+```
+
+The solid lines on each graph are places on which Republican equals to Democratic. From the 2 graphs above, I get that even though Republican won Democratic in all most all major cities based on amount of donation, Democratic won in most major cities based on number of donators, especially in big cities, like Nashville , Memphis, where number of Democratic supporters are more than two times than that of Republican supporters.
+
+The following graph will show the top 20 donation number distribution by zip code.
+```{r, echo = FALSE}
+p_zc <- p%>%
+  group_by(contbr_zip)%>%
+  summarize(n = n())%>%
+  arrange(desc(n))
+p_zc <- p_zc[1:20,]
+ggplot(aes(x = contbr_zip, y = n), data = p_zc)+
+  geom_bar(stat = "identity")+
+  ggtitle("Donation number by zip code - top 20")
+```
+
+Then I want to learn more about big donators. Where did big donators live in?
+
+```{r,echo=FALSE}
+p_rich_city <- p_rich %>%
+  group_by(contbr_city) %>%
+  summarize(n = n(),
+            sum_amt = sum(contb_receipt_amt)) %>%
+  arrange(desc(n))
+p_rich_city_n <- p_rich_city[1:10,]
+p_rich_city_n
+ggplot(aes(x = c(1:10), y = n, label = n), data = p_rich_city_n)+
+  geom_bar(stat = "identity")+
+  scale_x_continuous(breaks = seq(1,10,1))+
+  geom_text(aes(size = 10))+
+  ggtitle("City where richer donators lived in")
+```
+
+We can see that Nashville, Knoxville and Memphis have the largest number of richer donators. However, it does not make sense as total number of donators was not considered. Thus I want to show the ratio of richer donators and pick up 10 cities with highest richer donators rate. In order to make it statistically useful, I only take cities with at least 500 donators into consideration. 
+
+```{r, echo=FALSE}
+p_rich_city_rate <- p %>%
+  group_by(contbr_city) %>%
+  summarize(n = n(),
+            sum_rich = sum(contb_receipt_amt >= 1000),
+            rich_rate = sum_rich/n)%>%
+  arrange(desc(rich_rate))
+p_rich_city_rate = p_rich_city_rate[p_rich_city_rate$n >= 500,]
+p_rich_city_rate <- p_rich_city_rate[1:10,]
+p_rich_city_rate
+ggplot(aes(x = c(1:10), y = rich_rate), data = p_rich_city_rate)+
+  geom_bar(stat = "identity")+
+  ggtitle("Top 10 cities having highest richer donators rate")+
+  scale_x_continuous(breaks = seq(0,10,1))
+```
+
+The result is not surprising. Brentwood and Knoxville are rich districts. On the contrary, though Nashville and Memphis have a great number of richer donators, the non-rich should be even more.
+
+I am also interested in differences among retired, employed and unemployed donators. What were the amount distribution for the three groups? Which party do they each support more?
+
+Count the number of each group.
+```{r,warning = FALSE, message = FALSE,echo = FALSE}
+#add a variable contbr_retire to define one as retired or not.
+p_ocp <- p[(p$contbr_occupation != "" & p$contbr_occupation != "INFORMATION REQUESTED PER BEST EFFORTS"),]
+p_ocp$contbr_retire <- "employed"
+p_ocp$contbr_retire[grep("^RETIRED.*",p_ocp$contbr_occupation)] <- "retired"
+p_ocp$contbr_retire[grep("^NOT EMPLOYED.*", p_ocp$contbr_occupation)] <- "unemployed"
+table(p_ocp$contbr_retire)
+```
+
+Summary of retiree donation
+```{r,echo = FALSE}
+summary(subset(p_ocp, p_ocp$contbr_retire == "retired")$contb_receipt_amt)
+```
+
+Summary of employed people donation
+```{r, echo = FALSE}
+summary(subset(p_ocp, p_ocp$contbr_retire == "employed")$contb_receipt_amt)
+```
+
+Summary of unemployed people donation
+```{r,echo=FALSE}
+summary(subset(p_ocp, p_ocp$contbr_retire == "unemployed")$contb_receipt_amt)
+```
+
+```{r,warning = FALSE, message=FALSE,echo = FALSE}
+
+
+qplot(x = contbr_retire, y = contb_receipt_amt, data = p_ocp, geom = "boxplot")+
+  coord_cartesian(ylim = c(-200,1000))+
+  ggtitle("Donation amount distribution by employment")
+```
+
+See from the graph that employed groups have the largest portion of higher donators, and then followed by retirees, and then unemployed. Next I am gonna display their part affiliations.
+
+```{r, warning = FALSE, message = FALSE,echo = FALSE}
+
+ggplot(aes(x = contbr_retire, fill = cand_party), 
+       data = p_ocp[p_ocp$cand_party == "Democratic" | p_ocp$cand_party == "Republican",])+
+  geom_bar(stat = "count", position = "dodge")+
+  geom_text(aes(x = contbr_retire, y = ..count.., label = ..count..),
+            stat = "count",position = position_dodge(0.9),vjust = 0)+
+  ggtitle("Occupation and party affiliation")
+```
+
+This result shows that compared to retirees, employed donators support Democratic more. All unemployed donators except two support Democratic.
+
+I wish to learn about political affiliation by their occupations. I tabled the data by occupation and read through top 100 with the greatest count number.It is impossible to group them one by one so I choose 5 easily recognizable occupations, physician, homemaker, attorney, teacher and student, where attorney includes attorney and lawyer labeled, and teacher includes professor, teacher as well as college professor. Table the 5 occupations. 
+
+```{r, echo = FALSE}
+occupation_list <- c("PHYSICIAN","HOMEMAKER","ATTORNEY","LAWYER","PROFESSOR",
+                     "TEACHER","COLLEGE PROFESSOR","STUDENT")
+p_occ <- subset(p,p$contbr_occupation%in%occupation_list, drop = TRUE)
+p_occ$contbr_occupation <- replace(p_occ$contbr_occupation, 
+                                   p_occ$contbr_occupation == "LAWYER","ATTORNEY")
+p_occ$contbr_occupation <- replace(p_occ$contbr_occupation, 
+                                   p_occ$contbr_occupation%in%c("PROFESSOR","COLLEGE PROFESSOR"),"TEACHER")
+ggplot(aes(x = contbr_occupation, y = ..count..), data = p_occ)+
+  geom_bar(stat = "count",aes(fill = contbr_occupation))+
+  geom_text(aes(y = ..count..,label = ..count..), stat = "count")+
+  ggtitle("Sample number for each occupation")
+```
+
+Then I am gonna see their donation amount distribution.
+summary of attorney donation distribution.
+```{r, echo = FALSE}
+summary(subset(p_occ, p_occ$contbr_occupation == "ATTORNEY")$contb_receipt_amt)
+```
+
+summary of homemaker donation distribution.
+```{r, echo = FALSE}
+summary(subset(p_occ, p_occ$contbr_occupation == "HOMEMAKER")$contb_receipt_amt)
+```
+
+summary of physician donation distribution.
+```{r, echo = FALSE}
+summary(subset(p_occ, p_occ$contbr_occupation == "PHYSICIAN")$contb_receipt_amt)
+```
+
+summary of student donation distribution.
+```{r, echo = FALSE}
+summary(subset(p_occ, p_occ$contbr_occupation == "STUDENT")$contb_receipt_amt)
+```
+
+summary of teacher donation distribution.
+```{r, echo = FALSE}
+summary(subset(p_occ, p_occ$contbr_occupation == "TEACHER")$contb_receipt_amt)
+```
+
+```{r, echo = FALSE}
+ggplot(aes(x = contbr_occupation,y = contb_receipt_amt), data = p_occ)+
+  geom_boxplot()+
+  coord_cartesian(ylim = c(-250,1000))+
+  ggtitle("Donation distribution by occupation")
+```
+
+Student and teacher's median values are relatively less than other three occupations.Homemakers are more generous. Then show their political affiliation.
+```{r, echo = FALSE}
+p_occ_new <- p_occ %>%
+  group_by(contbr_occupation, cand_party)%>%
+  summarize(n = n(),
+            sum_amt = sum(contb_receipt_amt))
+p_occ_new
+p_occ_new <- p_occ_new[p_occ_new$cand_party == "Republican" | 
+                         p_occ_new$cand_party == "Democratic", ]
+p_occ_wide_n <- dcast(p_occ_new,
+                    contbr_occupation ~ cand_party,
+                    value.var = "n")
+ggplot(aes(x = Democratic, y = Republican,label = contbr_occupation), data = p_occ_wide_n)+
+  geom_point()+
+  geom_text_repel()+
+  geom_abline(intercept = 0,slope = 1)+
+  coord_cartesian(xlim = c(0,3000), ylim = c(0,3000))+
+  ggtitle("Political Affiliation by occupation")
+```
+
+Attorneys and teachers are extrmemly apt to Democratic. Homemakers and physicians support Republican more. Students' political affiliation stands next to neutral. 
+
+# Final plots and summary
+Finally, by exploring the data, I tried to answer the question: Which kind of persons support Democratic or Republican? I tried to describe these two groups of people using data and graphs. 
+
+The first plot is the one reflecting average donation amount per person for each candidate. The reason why I drew this picture is because in the previous analysis, I found that the amount of donation Republican received was much higher than Democratic, but the number of donators for Democratic was higher than Democratic and I was curious abount how much gap they have on average donation amount per donator. 
+
+## Plot one
+
+```{r,echo = FALSE}
+ggplot(aes(x = cand_nm, y = sum_amt/n,fill = cand_party, angle = 30), data = p_by_candnm)+
+  geom_bar(stat = "identity")+
+  ggtitle("Average donation per donator for each candidate")+
+  xlab("Candidate Names")+
+  ylab("Number of donations")+
+  theme(axis.text.x  = element_text(angle=30, vjust=0.5))
+```
+
+The plot shows that the only one candidate of Democratic, Obama, was really a poor guy. His average donation amount was much lower than others and it seems that people who support him should be middle or lower middle class. Candidates from other parties got more fund per donator.
+
+Knowing that the poorer were supporting Democratic, I would like to know about the regional distribution of donators. So I drew the following graph.
+
+## Plot two
+
+```{r,echo = FALSE}
+ggplot(aes(x = Democratic, y = Republican), data = p_wide_n)+
+  geom_point()+
+  ylim(0,10000)+
+  geom_abline(intercept = 0,slope = 1)+
+  ggtitle("Republican VS Democratic: Number")+
+  geom_text_repel(aes(label = contbr_city),size = 2.5)+
+  xlab("Democratic donation number")+
+  ylab("Republican donation number")
+```
+
+It is not surprising that the proportion of donators who supporting Democratic was much higher in big cities, like Nashville and Memphis. The two largest cities had the two highest Democratic supporting rate. 
+
+And next I moved to the time distribution of donations for each party. 
+
+## Plot three
+
+```{r,warning = FALSE,echo = FALSE}
+ggplot(aes(x = half_month,
+           y = sum_amt), data = p_by_date)+
+  geom_line(aes(color = cand_party),stat = "identity")+
+  xlim(0,49)+
+  ggtitle("Donate amount vs half-month")+
+  geom_vline(xintercept = c(48.21,43.21,33))+
+  ylab("Donation amount(Unit: dollars)")+
+  xlab("Time(Unit: 2 weeks)")
+```
+
+The plot dispalys that Republican candidates did not lack money, compared to Democratic candidate, for ever since 2011, larger amounts of money had been being donated to Republican candidates continuously.Even when it was approaching elective day, the amount of money donated to Obama was not able to hit serveral summits Republican reached far ahead of time.
+
+So the answer for the previous question is that people of middle and upper middle class tended to support Republican while lower middle and ever poorer electorate tended to support Democratic in state of Tenneessee. People living in big cities tended to donate to Democratic. However, Republican candidates were able to gain more funds from richer persons over time. 
+
+# Reflection
+I found so many funny things by exploring the dataset and I think they are meaningful. The process was not too tricky because variables contained are less. The three packages, ggplot2, reshape2 and dplyr were helpful. I am able to handle problems with the help of them.
+However, I think some more tricky questions can be added into the analysis to further improve and complete the project.
+
+* Try analysing the more relationship between donators occupation and their political affiliate. It requires us to group their occupation precisely. 
+
+* Compare Romney and other Republican candidates.
+
+* Try exploring relationship between gender and donation amount per person, gender and political affiliate. However, the current dataset lack relevant information. We can group them by mapping their names to gender, which would be supposed to cause biasness.
+
+I need to practice R often and learn more about R command later but thanks for the experience. 
