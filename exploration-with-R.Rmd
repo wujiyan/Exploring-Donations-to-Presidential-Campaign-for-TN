@@ -91,36 +91,34 @@ head(p)
 
 After cleaning and updating the data, I have got some ideas about the data structure and how I would explore it. I will try to get some meaningful features about donations from TN. First I would like to see the donation amount distribution.
 
-```{r,warning = FALSE,message = FALSE,echo = FALSE}
+```{r,warning = FALSE, message = FALSE,echo = FALSE}
 library(ggplot2)
 library(reshape2)
 library(dplyr)
 library(ggrepel)
 ```
-## Donation amount distribution
-```{r,warning = FALSE,echo = FALSE}
-#define a graph function
-graph <- function(x, y, data, geom, title){
-  aes <- eval(substitute(aes(x, y),
-    list(x = substitute(x), y = substitute(y))))
-  p <- ggplot(data, aes) + geom + ggtitle(title)
-}
 
-q <-graph(x = contb_receipt_amt, data = p,
-      geom = geom_histogram(binwidth = 10,col = "black", fill = "#6495ED"),
-      title = "number of donations at each amount interval")
-q+scale_x_continuous(lim = c(0,1000),breaks = seq(0,1000,50))
+## Donation amount distribution
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE}
+#define a graph function
+
+ggplot(aes(x = contb_receipt_amt),data = p)+
+  geom_histogram(binwidth = 10,col = "black", fill = "#6495ED")+
+  scale_x_continuous(lim = c(0,1000),breaks = seq(0,1000,50))+
+  ggtitle("number of donations at each amount interval")
 ```
 
 As we can see from the graph above, most donation amount are under 100 dollars. What's more, contributors tended to donate some centain amount of like 100, 150, 200, 250, 300 and 500 dollars, compared to neighboring amount. 
 I should mention that the amount ranged from -5000 to 10000 dollars, however, the number of them is too small so I limit the range displayed between 0 and 1000. 
 This graph seems skew. I decide to use log10 x-axis to make it look more balanced.
-```{r, warining = FALSE,echo = FALSE}
-q <-graph(x = contb_receipt_amt, data = p,
-      geom = geom_histogram(col = "black", fill = "#6495ED",binwidth = 0.05),
-      title = "number of donations at each mount log10 interval")
-q+scale_x_log10(breaks = c(5,10,50,100,200,500,1000,5000,10000))
 
+```{r, warning = FALSE, echo = FALSE}
+
+ggplot(aes(x = contb_receipt_amt),data = p)+
+  geom_histogram(col = "black", fill = "#6495ED",binwidth = 0.05)+
+  scale_x_log10(breaks = c(5,10,50,100,200,500,1000,5000,10000))+
+  ggtitle("number of donations at each mount log10 interval")
 ```
 
 Knowing the amount distribution, I am trying to know where did these donations flow into. In other words, how much did each candidate receive.
