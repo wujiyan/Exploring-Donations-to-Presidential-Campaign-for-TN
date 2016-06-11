@@ -10,6 +10,7 @@ The dataset chosen is the Financial Contributions to Presidential Campaigns for 
 # Basic information and cleaning data
 Firstly read the dataset and have a glance at its structure.
 ```{r,echo = FALSE}
+#read dataset
 setwd("C:/data analyst/pj4/project")       #set work directory
 p <- read.table("P00000001-TN.csv",header = TRUE, sep = ",", row.names = NULL)     #read csv file
 colnames(p) <- c(colnames(p)[-1],'x')
@@ -24,15 +25,19 @@ The dataset has 18 variables. I notice that "cmte_id", "cand_id", "file_num", an
 Also, variable "contbr_st" is meaningless, since this table is for state of TN only. So I deleted these variables to simplify the dataset. 
 ```{r,echo = FALSE}
 # delete 6 variables that I don't care.
-del_name_list = c("cmte_id","cand_id", "contbr_st","file_num","tran_id","form_tp")
+del_name_list = c("cmte_id","cand_id", "contbr_st",
+                  "file_num","tran_id","form_tp")
 p <- p[!names(p)%in%del_name_list]
 
 ```
 Next, I am gonna change data types. The absolute value of contbr_zip has no mathematical meaning, so I change it from int to factor. Contb_receipt_dt should be switched to date format. Besides, zip codes do not have united formates. Some are 5 digit number while some are 9 digit number. I extract the first 5 digit from those of 9 digit. 
 ```{r,echo = FALSE}
+# reformat zip code
 p$contbr_zip <- as.factor(p$contbr_zip)    #switch zip from int to factor
-p$contb_receipt_dt <- as.Date(p$contb_receipt_dt, format = "%d-%b-%y")     #switch date from factor to Date format
-p$contbr_zip <- substr(p$contbr_zip,1,5)      #extract the first 5 digit number as zip codes.
+#switch date from factor to Date format
+p$contb_receipt_dt <- as.Date(p$contb_receipt_dt, format = "%d-%b-%y")
+#extract the first 5 digit number as zip codes.
+p$contbr_zip <- substr(p$contbr_zip,1,5)      
 
 ```
 Then I would like to add a colunmn called cand_party, representing each candidate's party. 
@@ -41,13 +46,18 @@ levels(p$cand_nm)
 ```
 See that there were 14 presidential candidates who received donations from TN. I would create lists to group them by party.
 ```{r,echo = FALSE}
-#create lists to group them
-Republican <- c("Bachmann, Michele","Cain, Herman","Gingrich, Newt" ,"Huntsman, Jon","McCotter, Thaddeus G","Paul, Ron","Pawlenty, Timothy","Perry, Rick","Roemer, Charles E. 'Buddy' III","Romney, Mitt","Santorum, Rick")
+#create lists to group by party
+Republican <- c("Bachmann, Michele","Cain, Herman","Gingrich, Newt" ,
+                "Huntsman, Jon","McCotter, Thaddeus G","Paul, Ron",
+                "Pawlenty, Timothy","Perry, Rick",
+                "Roemer, Charles E. 'Buddy' III","Romney, Mitt","Santorum, Rick")
 Libertarian <- c("Johnson, Gary Earl")
 Democratic <- c("Obama, Barack")
 Green <- c("Stein, Jill")
-#create the new variable
-p$cand_party <- ifelse(p$cand_nm%in%Republican,"Republican", ifelse(p$cand_nm%in%Libertarian,"Libertarian", ifelse(p$cand_nm%in%Democratic,"Democratic", "Green")))
+#create the new variable representing candidate party
+p$cand_party<-ifelse(p$cand_nm%in%Republican,"Republican", 
+                     ifelse(p$cand_nm%in%Libertarian,"Libertarian", 
+                            ifelse(p$cand_nm%in%Democratic,"Democratic", "Green")))
 p$cand_party <- as.factor(p$cand_party)
 ```
 Now I got a datawet with 13 varialbes and 81338 observations. Summary the dataset.
@@ -57,6 +67,7 @@ summary(p)
 See that there are several NAs in contbr_occupation and contbr_employer. That does not matter because NA number is small. I also notice that some contribution amounts are negative, and that is because of refund displayed from receipt_desc. There is something strange that some election_tp are concerning to 2008. Look at their memo texts to see if there are any explanations.
 
 ```{r,echo = FALSE}
+# See descriptions regarding donations of year 2008
 p[(p$election_tp == "G2008" | p$election_tp == "P2008"),]$receipt_desc
 
 ```
@@ -64,6 +75,7 @@ p[(p$election_tp == "G2008" | p$election_tp == "P2008"),]$receipt_desc
 There are all refunds regarding donation of year 2008.  Next I am gonna add a new variable called ele_tp to represent its election type(primary, general or others) by extracting the first alphabet. 
 
 ```{r, echo = FALSE}
+#create new variable to represent election type
 p$ele_tp <- substr(p$election_tp,1,1)
 p$ele_tp <- as.factor(p$ele_tp)
 ```
@@ -87,20 +99,27 @@ library(ggrepel)
 ```
 ## Donation amount distribution
 ```{r,warning = FALSE,echo = FALSE}
-ggplot(aes(x = contb_receipt_amt), data = p)+
-  geom_histogram(binwidth = 10,col = "black", fill = "#6495ED")+
-  scale_x_continuous(lim = c(0,1000),breaks = seq(0,1000,50))+
-  ggtitle("number of donations at each amount interval")
+#define a graph function
+graph <- function(x, y, data, geom, title){
+  aes <- eval(substitute(aes(x, y),
+    list(x = substitute(x), y = substitute(y))))
+  p <- ggplot(data, aes) + geom + ggtitle(title)
+}
+
+q <-graph(x = contb_receipt_amt, data = p,
+      geom = geom_histogram(binwidth = 10,col = "black", fill = "#6495ED"),
+      title = "number of donations at each amount interval")
+q+scale_x_continuous(lim = c(0,1000),breaks = seq(0,1000,50))
 ```
 
 As we can see from the graph above, most donation amount are under 100 dollars. What's more, contributors tended to donate some centain amount of like 100, 150, 200, 250, 300 and 500 dollars, compared to neighboring amount. 
 I should mention that the amount ranged from -5000 to 10000 dollars, however, the number of them is too small so I limit the range displayed between 0 and 1000. 
 This graph seems skew. I decide to use log10 x-axis to make it look more balanced.
 ```{r, warining = FALSE,echo = FALSE}
-ggplot(aes(x = contb_receipt_amt),data = subset(p,p$contb_receipt_amt > 0))+
-  geom_histogram(col = "black", fill = "#6495ED",binwidth = 0.05)+
-  scale_x_log10(breaks = c(5,10,50,100,200,500,1000,5000,10000))+
-  ggtitle("number of donations at each mount log10 interval")
+q <-graph(x = contb_receipt_amt, data = p,
+      geom = geom_histogram(col = "black", fill = "#6495ED",binwidth = 0.05),
+      title = "number of donations at each mount log10 interval")
+q+scale_x_log10(breaks = c(5,10,50,100,200,500,1000,5000,10000))
 
 ```
 
@@ -173,12 +192,14 @@ Next I want to explore how much did each party gain in primary and general elect
 #plot donation number vs party by election type
 p_tem <- p[(p$ele_tp != ""),]
 ggplot(aes(x = cand_party,fill=ele_tp),
-       data = p_tem[p_tem$cand_party == "Democratic" | p_tem$cand_party == "Republican",])+
+       data = p_tem[p_tem$cand_party == "Democratic" 
+                    | p_tem$cand_party == "Republican",])+
   geom_bar(stat = "count")+
   ggtitle("Donation number vs party by election type")
 
 #group data by election type and party, then sum the amount of money.
-p_by_eletp <- subset(p[p$cand_party == "Democratic" | p$cand_party == "Republican",]) %>%
+p_by_eletp <- subset(p[p$cand_party == "Democratic" 
+                       | p$cand_party == "Republican",]) %>%
   group_by(ele_tp, cand_party) %>%
   summarize(sum_amt = sum(contb_receipt_amt))
 p_by_eletp <- p_by_eletp[-1,]
@@ -225,10 +246,13 @@ From the first graph, we get to know that with the time being approaching to the
 Next I would like to learn the time when richer persons donated money. I only consider those who donated 500 or more dollars. 
 
 ```{r,echo = FALSE}
+# extract richer donation
 p_rich <- subset(p, p$contb_receipt_amt >= 1000)
-p_rich <- subset(p_rich,p_rich$cand_party == "Democratic" | p_rich$cand_party == "Republican")
+p_rich <- subset(p_rich,p_rich$cand_party == "Democratic" 
+                 | p_rich$cand_party == "Republican")
 
-ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, col = ele_tp), data = p_rich)+
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, col = ele_tp), 
+       data = p_rich)+
   geom_point(aes(alpha = 0.05))+
   facet_wrap(~ cand_party, ncol = 1)+
   ggtitle("Richer persons donations over time")
@@ -253,7 +277,8 @@ p_by_city_n <- p %>%
 major_city = p_by_city_n$contbr_city[1:30]
 head(p_by_city_n,30)
 
-# group dataset by city and party, and then reshape it. The value I care about is the count number
+# group dataset by city and party, and then reshape it. 
+#The value I care about is the count number.
 p_by_city <- p %>%
   group_by(contbr_city,cand_party) %>%
   summarize(n = n()) %>%
@@ -272,7 +297,8 @@ ggplot(aes(x = Democratic, y = Republican), data = p_wide_n)+
   geom_text_repel(aes(label = contbr_city),size = 2.5)+
   ggtitle("Republican VS Democratic: Number")
 
-# group dataset by city and party, and then reshape it. The value I care about is the donation amount
+# group dataset by city and party, and then reshape it. 
+#The value I care about is the donation amount.
 p_by_city_amt <- p %>%
   group_by(contbr_city,cand_party) %>%
   summarize(sum_amt = sum(contb_receipt_amt)) %>%
@@ -294,6 +320,7 @@ The solid lines on each graph are places on which Republican equals to Democrati
 
 The following graph will show the top 20 donation number distribution by zip code.
 ```{r, echo = FALSE}
+#group data by zip code and extract the top 20.
 p_zc <- p%>%
   group_by(contbr_zip)%>%
   summarize(n = n())%>%
@@ -307,6 +334,7 @@ ggplot(aes(x = contbr_zip, y = n), data = p_zc)+
 Then I want to learn more about big donators. Where did big donators live in?
 
 ```{r,echo=FALSE}
+#group data by city and extract the top 10
 p_rich_city <- p_rich %>%
   group_by(contbr_city) %>%
   summarize(n = n(),
@@ -330,7 +358,9 @@ p_rich_city_rate <- p %>%
             sum_rich = sum(contb_receipt_amt >= 1000),
             rich_rate = sum_rich/n)%>%
   arrange(desc(rich_rate))
+#only those with 500 or more donations are valid
 p_rich_city_rate = p_rich_city_rate[p_rich_city_rate$n >= 500,]
+#extract the top 10 city
 p_rich_city_rate <- p_rich_city_rate[1:10,]
 p_rich_city_rate
 ggplot(aes(x = c(1:10), y = rich_rate), data = p_rich_city_rate)+
@@ -346,10 +376,12 @@ I am also interested in differences among retired, employed and unemployed donat
 Count the number of each group.
 ```{r,warning = FALSE, message = FALSE,echo = FALSE}
 #add a variable contbr_retire to define one as retired or not.
-p_ocp <- p[(p$contbr_occupation != "" & p$contbr_occupation != "INFORMATION REQUESTED PER BEST EFFORTS"),]
+p_ocp <- p[(p$contbr_occupation != "" & 
+              p$contbr_occupation != "INFORMATION REQUESTED PER BEST EFFORTS"),]
 p_ocp$contbr_retire <- "employed"
 p_ocp$contbr_retire[grep("^RETIRED.*",p_ocp$contbr_occupation)] <- "retired"
-p_ocp$contbr_retire[grep("^NOT EMPLOYED.*", p_ocp$contbr_occupation)] <- "unemployed"
+p_ocp$contbr_retire[grep("^NOT EMPLOYED.*", 
+                         p_ocp$contbr_occupation)] <- "unemployed"
 table(p_ocp$contbr_retire)
 ```
 
@@ -370,7 +402,6 @@ summary(subset(p_ocp, p_ocp$contbr_retire == "unemployed")$contb_receipt_amt)
 
 ```{r,warning = FALSE, message=FALSE,echo = FALSE}
 
-
 qplot(x = contbr_retire, y = contb_receipt_amt, data = p_ocp, geom = "boxplot")+
   coord_cartesian(ylim = c(-200,1000))+
   ggtitle("Donation amount distribution by employment")
@@ -381,7 +412,8 @@ See from the graph that employed groups have the largest portion of higher donat
 ```{r, warning = FALSE, message = FALSE,echo = FALSE}
 
 ggplot(aes(x = contbr_retire, fill = cand_party), 
-       data = p_ocp[p_ocp$cand_party == "Democratic" | p_ocp$cand_party == "Republican",])+
+       data = p_ocp[p_ocp$cand_party == "Democratic" 
+                    | p_ocp$cand_party == "Republican",])+
   geom_bar(stat = "count", position = "dodge")+
   geom_text(aes(x = contbr_retire, y = ..count.., label = ..count..),
             stat = "count",position = position_dodge(0.9),vjust = 0)+
@@ -393,13 +425,17 @@ This result shows that compared to retirees, employed donators support Democrati
 I wish to learn about political affiliation by their occupations. I tabled the data by occupation and read through top 100 with the greatest count number.It is impossible to group them one by one so I choose 5 easily recognizable occupations, physician, homemaker, attorney, teacher and student, where attorney includes attorney and lawyer labeled, and teacher includes professor, teacher as well as college professor. Table the 5 occupations. 
 
 ```{r, echo = FALSE}
+#create valid occupation list
 occupation_list <- c("PHYSICIAN","HOMEMAKER","ATTORNEY","LAWYER","PROFESSOR",
                      "TEACHER","COLLEGE PROFESSOR","STUDENT")
 p_occ <- subset(p,p$contbr_occupation%in%occupation_list, drop = TRUE)
+#update occupation name
 p_occ$contbr_occupation <- replace(p_occ$contbr_occupation, 
-                                   p_occ$contbr_occupation == "LAWYER","ATTORNEY")
-p_occ$contbr_occupation <- replace(p_occ$contbr_occupation, 
-                                   p_occ$contbr_occupation%in%c("PROFESSOR","COLLEGE PROFESSOR"),"TEACHER")
+                                   p_occ$contbr_occupation == 
+                                     "LAWYER","ATTORNEY")
+p_occ$contbr_occupation<-replace(p_occ$contbr_occupation, 
+                                 p_occ$contbr_occupation%in%
+                                   c("PROFESSOR","COLLEGE PROFESSOR"),"TEACHER")
 ggplot(aes(x = contbr_occupation, y = ..count..), data = p_occ)+
   geom_bar(stat = "count",aes(fill = contbr_occupation))+
   geom_text(aes(y = ..count..,label = ..count..), stat = "count")+
@@ -441,6 +477,7 @@ ggplot(aes(x = contbr_occupation,y = contb_receipt_amt), data = p_occ)+
 
 Student and teacher's median values are relatively less than other three occupations.Homemakers are more generous. Then show their political affiliation.
 ```{r, echo = FALSE}
+#group data by occupation and party
 p_occ_new <- p_occ %>%
   group_by(contbr_occupation, cand_party)%>%
   summarize(n = n(),
@@ -448,10 +485,12 @@ p_occ_new <- p_occ %>%
 p_occ_new
 p_occ_new <- p_occ_new[p_occ_new$cand_party == "Republican" | 
                          p_occ_new$cand_party == "Democratic", ]
+#reshape dataset and plot it
 p_occ_wide_n <- dcast(p_occ_new,
                     contbr_occupation ~ cand_party,
                     value.var = "n")
-ggplot(aes(x = Democratic, y = Republican,label = contbr_occupation), data = p_occ_wide_n)+
+ggplot(aes(x = Democratic, y = Republican,label = contbr_occupation), 
+       data = p_occ_wide_n)+
   geom_point()+
   geom_text_repel()+
   geom_abline(intercept = 0,slope = 1)+
@@ -469,7 +508,8 @@ The first plot is the one reflecting average donation amount per person for each
 ## Plot one
 
 ```{r,echo = FALSE}
-ggplot(aes(x = cand_nm, y = sum_amt/n,fill = cand_party, angle = 30), data = p_by_candnm)+
+ggplot(aes(x = cand_nm, y = sum_amt/n,fill = cand_party, angle = 30), 
+       data = p_by_candnm)+
   geom_bar(stat = "identity")+
   ggtitle("Average donation per donator for each candidate")+
   xlab("Candidate Names")+
